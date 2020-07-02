@@ -1,0 +1,42 @@
+#!/bin/bash
+
+set -e -o pipefail
+
+if [ "$#" -lt 1 ]
+then
+    echo "Usage: $0 container-name [tcp-dump options]" >&2
+    echo " e.g. $0 gatekeeper tcp port 8080"
+fi
+CONTAINER=$1; shift
+
+# Verify the container is running.
+state=$(docker inspect --format='{{.State.Running}}' $CONTAINER)
+if [ "$state" != "true" ]
+then
+    echo "Container '$CONTAINER' is not running" >&2
+    exit 2
+fi
+
+# Get list of all docker host names / IPv4 addresses, and save in Wireshark's "custom" hosts file.
+# Don't fail if we don't have permissions to do this.
+(for i in $(docker network ls -q)
+do
+    if [ "$(docker network inspect -f '{{len .Containers}}' $i)" -gt 0 ]
+    then
+        echo "# $i ($(docker network inspect -f '{{.Name}}' $i))"
+        docker network inspect $i | jq -r '.[0] | .Containers | .[] | .IPv4Address + "\t" + .Name'  | sort -k 2 | expand -t 20 | sed 's:/[0-9]*::'
+        echo
+    fi
+done >$HOME/.config/wireshark/hosts) || true
+
+# Wireshark options:
+#   -k      Start capture immediately.
+#   -S      Update display whenever receive a packet.
+#   -i -    Read from stdin.
+
+# Note: do not run docker with "-it", as this will insert control characters in stdout.
+
+FILTER="${CONDUMP_FILTER:-!(ip.src_host == "localhost" && ip.dst_host == "localhost") && tcp}"
+# Useful example:  !(ip.src_host == "localhost" && ip.dst_host == "localhost") && http && !ip.host == admin && !ip.host == registry
+exec docker run --rm --network=container:${CONTAINER} tcpdump-companion "$@" |
+    /Applications/Wireshark.app/Contents/MacOS/Wireshark  -k -S -i - -N n -o capture.no_interface_load:True -o gui.ask_unsaved:False -Y "${FILTER}"
