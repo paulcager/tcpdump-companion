@@ -1,3 +1,4 @@
 #!/bin/bash
 
 exec /usr/bin/tcpdump 2>/dev/null -U -i any -w - "$@"
+
