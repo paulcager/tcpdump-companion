@@ -2,4 +2,5 @@
 
 set -e -o pipefail
 
-exec docker build -t tcpdump-companion .
+docker build -t tcpdump-companion .
+docker tag tcpdump-companion paulcager/tcpdump-companion
